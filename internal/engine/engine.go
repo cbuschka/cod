@@ -5,15 +5,11 @@ import (
 	"fmt"
 	"github.com/cbuschka/cod/internal/inventory"
 	"github.com/cbuschka/go-ant-pattern"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/phayes/freeport"
 	log "github.com/sirupsen/logrus"
-	"io"
-	"os"
 	"time"
 )
 
@@ -39,12 +35,12 @@ type Engine struct {
 	containerIdSeq *Counter
 	routes         []*Route
 	configs        map[string]inventory.ContainerConfig
-	dockerClient   *client.Client
+	dockerClient   ContainerRuntime
 	janitor        *Janitor
 }
 
 func NewEngine() (*Engine, error) {
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerClient, err := NewContainerRuntime()
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +59,7 @@ func (engine *Engine) CleanUp(ctx context.Context) error {
 
 	log.Info("Cleaning up...")
 
-	containerList, err := engine.dockerClient.ContainerList(ctx, types.ContainerListOptions{})
+	containerList, err := engine.dockerClient.ListContainers(ctx)
 	if err != nil {
 		return err
 	}
@@ -73,7 +69,7 @@ func (engine *Engine) CleanUp(ctx context.Context) error {
 		if found {
 			log.Infof("Removing container %s...", container_.Names[0])
 
-			err := engine.dockerClient.ContainerKill(ctx, container_.ID, "KILL")
+			err := engine.dockerClient.KillContainer(ctx, container_.ID)
 			if err != nil {
 				return err
 			}
@@ -139,12 +135,7 @@ func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*Contai
 
 	ctx := context.Background()
 
-	reader, err := engine.dockerClient.ImagePull(ctx, config.ImageName, types.ImagePullOptions{})
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-	io.Copy(os.Stdout, reader)
+	err := engine.dockerClient.PullImage(ctx, config.ImageName)
 
 	networkingConfig := network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
 	hostConfig := container.HostConfig{
@@ -177,43 +168,22 @@ func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*Contai
 		Image:  config.ImageName,
 		Labels: labels,
 	}
-	resp, err := engine.dockerClient.ContainerCreate(ctx, &containerConfig, &hostConfig, &networkingConfig, nil, containerName)
+	resp, err := engine.dockerClient.CreateContainer(ctx, &containerConfig, &hostConfig, &networkingConfig, nil, containerName)
 	if err != nil {
 		return nil, err
 	}
 
-	err = engine.dockerClient.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	err = engine.dockerClient.StartContainer(ctx, resp.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	// mappedPort, err := engine.getExposedPort(ctx, config.ContainerPort, resp.ID)
 	err = waitForAvailableViaHttp(config.HostAddress, hostPort)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ContainerInstance{id: resp.ID, endpoint: ContainerEndpoint{Address: config.HostAddress, Port: hostPort}}, nil
-}
-
-func (engine *Engine) getExposedPort(ctx context.Context, containerPort int, containerId string) (int, error) {
-
-	info, err := engine.dockerClient.ContainerInspect(ctx, containerId)
-	if err != nil {
-		return -1, err
-	}
-
-	for port, portBindings := range info.HostConfig.PortBindings {
-		if port.Int() == containerPort {
-			hostPort, err := nat.ParsePort(portBindings[0].HostPort)
-			if err != nil {
-				return -1, err
-			}
-			return hostPort, nil
-		}
-	}
-
-	return -1, fmt.Errorf("no binding found")
 }
 
 func (engine *Engine) getRoutes() []*Route {
@@ -242,7 +212,7 @@ func (engine *Engine) shutdownRoute(route *Route) error {
 
 	if containerInstance != nil {
 		ctx := context.TODO()
-		err := engine.dockerClient.ContainerKill(ctx, containerInstance.id, "KILL")
+		err := engine.dockerClient.KillContainer(ctx, containerInstance.id)
 		if err != nil {
 			return err
 		}
