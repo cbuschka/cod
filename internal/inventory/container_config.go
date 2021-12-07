@@ -15,6 +15,8 @@ type ContainerConfig struct {
 	ImageName     string        `yaml:"image"`
 	ContainerPort int           `yaml:"port"`
 	MaxIdleTime   time.Duration `yaml:"maxIdleTime"`
+	HostPort      int           `yaml:"hostPort"`
+	HostAddress   string        `yaml:"hostAddress"`
 }
 
 func LoadContainerConfig(filename string) (*ContainerConfig, error) {
@@ -34,6 +36,10 @@ func LoadContainerConfig(filename string) (*ContainerConfig, error) {
 
 	if "cod:config/v1" != containerConfig.Version {
 		return nil, fmt.Errorf("unsupported version")
+	}
+
+	if containerConfig.HostAddress == "" {
+		containerConfig.HostAddress = "127.0.0.1"
 	}
 
 	if containerConfig.MaxIdleTime == 0 {

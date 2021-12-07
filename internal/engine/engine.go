@@ -151,17 +151,20 @@ func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*Contai
 	networkingConfig := network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
 	hostConfig := container.HostConfig{AutoRemove: true}
 	hostConfig.PortBindings = make(nat.PortMap)
-	exposedPort, err := nat.NewPort("tcp", fmt.Sprintf("%d", config.ContainerPort))
+	containerPort, err := nat.NewPort("tcp", fmt.Sprintf("%d", config.ContainerPort))
 	if err != nil {
 		return nil, err
 	}
 
-	mappedPort, err := freeport.GetFreePort()
-	if err != nil {
-		return nil, err
+	hostPort := config.HostPort
+	if hostPort == 0 {
+		hostPort, err = freeport.GetFreePort()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	hostConfig.PortBindings[exposedPort] = []nat.PortBinding{{HostPort: fmt.Sprintf("%d/tcp", mappedPort), HostIP: "127.0.0.1"}}
+	hostConfig.PortBindings[containerPort] = []nat.PortBinding{{HostPort: fmt.Sprintf("%d/tcp", hostPort), HostIP: config.HostAddress}}
 	labels := make(map[string]string)
 	labels["cod:managed"] = "true"
 	labels["cod:configFilename"] = config.Filename
@@ -181,12 +184,12 @@ func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*Contai
 	}
 
 	// mappedPort, err := engine.getExposedPort(ctx, config.ContainerPort, resp.ID)
-	err = waitForAvailableViaHttp("127.0.0.1", mappedPort)
+	err = waitForAvailableViaHttp(config.HostAddress, hostPort)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ContainerInstance{id: resp.ID, endpoint: ContainerEndpoint{Address: "127.0.0.1", Port: mappedPort}}, nil
+	return &ContainerInstance{id: resp.ID, endpoint: ContainerEndpoint{Address: config.HostAddress, Port: hostPort}}, nil
 }
 
 func (engine *Engine) getExposedPort(ctx context.Context, containerPort int, containerId string) (int, error) {
