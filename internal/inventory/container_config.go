@@ -7,10 +7,13 @@ import (
 	"github.com/docker/go-units"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 type ContainerConfig struct {
+	Name          string        `yaml:"name"`
 	Filename      string        `yaml:"-"`
 	Version       string        `yaml:"version"`
 	Path          string        `yaml:"path"`
@@ -45,6 +48,14 @@ func LoadContainerConfig(filename string) (*ContainerConfig, error) {
 	}
 
 	containerConfig.Filename = filename
+
+	if containerConfig.Name == "" {
+		name := filepath.Base(filename)
+		if strings.HasSuffix(name, ".yml") {
+			name = name[0:len(name)-4]
+		}
+		containerConfig.Name = name
+	}
 
 	if "cod:config/v1" != containerConfig.Version {
 		return nil, fmt.Errorf("unsupported version")

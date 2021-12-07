@@ -133,7 +133,7 @@ func (engine *Engine) GetOrStartContainer(path string) (*ContainerEndpoint, stri
 
 func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*ContainerInstance, error) {
 
-	containerName := fmt.Sprintf("cod_%s_%d", engine.sessionId, engine.containerIdSeq.Next())
+	containerName := fmt.Sprintf("cod_%s_%s_%d", engine.sessionId, config.Name, engine.containerIdSeq.Next())
 
 	log.Infof("Starting container %s (image=%s)...", containerName, config.ImageName)
 
