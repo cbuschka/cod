@@ -3,7 +3,7 @@ module github.com/cbuschka/cod
 go 1.16
 
 require (
-	github.com/cbuschka/go-ant-pattern v0.0.1
+	github.com/cbuschka/go-ant-pattern v0.1.0
 	github.com/containerd/containerd v1.5.8 // indirect
 	github.com/docker/docker v20.10.11+incompatible
 	github.com/docker/go-connections v0.4.0

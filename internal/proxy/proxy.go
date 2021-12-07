@@ -19,14 +19,14 @@ func NewProxy(engine *enginePkg.Engine) (*Proxy, error) {
 
 func (proxy *Proxy) ForwardToContainer(writer http.ResponseWriter, request *http.Request) error {
 	path := request.URL.Path
-	endpoint, err := proxy.engine.GetOrStartContainer(path)
+	endpoint, downstreamPath, err := proxy.engine.GetOrStartContainer(path)
 	if err != nil {
 		log.Errorf("Getting container endpoint for %s failed: %v", path, err)
 		return err
 	}
 
-	url := fmt.Sprintf("%s://%s:%d%s", "http", endpoint.Address, endpoint.Port, request.RequestURI)
-	log.Infof("Redirecting %s to %s:%d...", request.URL.Path, endpoint.Address, endpoint.Port)
+	url := fmt.Sprintf("%s://%s:%d%s", "http", endpoint.Address, endpoint.Port, downstreamPath)
+	log.Infof("Redirecting %s to %s:%d%s...", request.URL.Path, endpoint.Address, endpoint.Port, downstreamPath)
 
 	body, err := ioutil.ReadAll(request.Body)
 	if err != nil {

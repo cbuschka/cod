@@ -71,7 +71,7 @@ func (engine *Engine) CleanUp(ctx context.Context) error {
 	return nil
 }
 
-func (engine *Engine) findRoute(path string) (*Route, error) {
+func (engine *Engine) findRoute(path string) (*Route, string, error) {
 
 	var best *Route = nil
 
@@ -82,34 +82,38 @@ func (engine *Engine) findRoute(path string) (*Route, error) {
 	}
 
 	if best != nil {
-		return best, nil
+		groups := best.pathPattern.FindStringSubmatch(path)
+		if len(groups) > 1 {
+			return best, groups[1], nil
+		}
+		return best, path, nil
 	}
 
-	return nil, fmt.Errorf("route not found")
+	return nil, path, fmt.Errorf("route not found")
 }
 
-func (engine *Engine) GetOrStartContainer(path string) (*ContainerEndpoint, error) {
+func (engine *Engine) GetOrStartContainer(path string) (*ContainerEndpoint, string, error) {
 
-	route, err := engine.findRoute(path)
+	route, downstreamPath, err := engine.findRoute(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	log.Infof("%s matches route pattern %s", path, route.pathPattern.String())
+	log.Infof("%s matches route pattern %s, target path %s", path, route.pathPattern.String(), downstreamPath)
 
 	if route.containerInstance != nil {
 		route.lastHit = time.Now()
-		return &route.containerInstance.endpoint, nil
+		return &route.containerInstance.endpoint, downstreamPath, nil
 	}
 
 	containerInstance, err := engine.StartContainer(route.config)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	route.containerInstance = containerInstance
 
-	return &containerInstance.endpoint, nil
+	return &containerInstance.endpoint, downstreamPath, nil
 }
 
 func (engine *Engine) StartContainer(config ContainerConfig) (*ContainerInstance, error) {
