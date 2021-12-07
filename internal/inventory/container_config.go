@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"github.com/docker/go-units"
 	"gopkg.in/yaml.v3"
@@ -21,6 +22,13 @@ type ContainerConfig struct {
 	CPUShares     int           `yaml:"cpu"`
 	MemoryStr     string        `yaml:"memory"`
 	MemoryBytes   int64         `yaml:"-"`
+}
+
+func (config *ContainerConfig) Checksum() string {
+
+	str := fmt.Sprintf("%v", *config)
+	checksumBytes := sha256.Sum256([]byte(str))
+	return fmt.Sprintf("sha256:%x", checksumBytes)
 }
 
 func LoadContainerConfig(filename string) (*ContainerConfig, error) {

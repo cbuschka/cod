@@ -171,6 +171,7 @@ func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*Contai
 	labels := make(map[string]string)
 	labels["cod:managed"] = "true"
 	labels["cod:configFilename"] = config.Filename
+	labels["cod:configChecksum"] = config.Checksum()
 	containerConfig := container.Config{
 		Tty:    false,
 		Image:  config.ImageName,
