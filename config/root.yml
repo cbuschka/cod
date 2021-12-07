@@ -1,0 +1,4 @@
+version: "cod:config/v1"
+path: "/"
+image: "nginx:latest"
+port: 80
