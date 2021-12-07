@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
+	"time"
 )
 
 type ContainerConfig struct {
-	Version       string `yaml:"version"`
-	Path          string `yaml:"path"`
-	ImageName     string `yaml:"image"`
-	ContainerPort int    `yaml:"port"`
+	Version       string        `yaml:"version"`
+	Path          string        `yaml:"path"`
+	ImageName     string        `yaml:"image"`
+	ContainerPort int           `yaml:"port"`
+	MaxIdleTime   time.Duration `yaml:"maxIdleTime" default:"30s"`
 }
 
 func LoadContainerConfig(filename string) (*ContainerConfig, error) {

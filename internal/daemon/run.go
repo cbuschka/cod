@@ -40,7 +40,11 @@ func Run() error {
 		return err
 	}
 	for _, containerConfig := range containerConfigs {
-		err = engine.AddContainerConfig(enginePkg.ContainerConfig{Path: containerConfig.Path, ImageName: containerConfig.ImageName, ContainerPort: containerConfig.ContainerPort})
+		err = engine.AddContainerConfig(enginePkg.ContainerConfig{Path: containerConfig.Path,
+			ImageName:     containerConfig.ImageName,
+			ContainerPort: containerConfig.ContainerPort,
+			MaxIdleTime:   containerConfig.MaxIdleTime,
+		})
 		if err != nil {
 			return err
 		}

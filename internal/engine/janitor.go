@@ -17,7 +17,7 @@ func (janitor *Janitor) Start(engine *Engine) {
 
 			routes := engine.getRoutes()
 			for _, route := range routes {
-				if route.containerInstance != nil && route.lastHit.Before(time.Now().Add(time.Duration(-30)*time.Second)) {
+				if route.containerInstance != nil && route.lastHit.Add(route.config.MaxIdleTime).Before(time.Now()) {
 					_ = engine.shutdownRoute(route)
 				}
 			}

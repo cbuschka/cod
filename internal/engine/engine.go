@@ -272,6 +272,7 @@ type ContainerConfig struct {
 	Path          string
 	ImageName     string
 	ContainerPort int
+	MaxIdleTime   time.Duration
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
