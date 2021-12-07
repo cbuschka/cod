@@ -131,7 +131,7 @@ func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*Contai
 
 	containerName := fmt.Sprintf("cod_%s_%s_%d", engine.sessionId, config.Name, engine.containerIdSeq.Next())
 
-	log.Infof("Starting container %s (image=%s)...", containerName, config.ImageName)
+	log.Infof("Starting container %s (%s) (image=%s)...", config.Name, containerName, config.ImageName)
 
 	ctx := context.Background()
 
@@ -205,7 +205,7 @@ func (engine *Engine) AddContainerConfig(containerConfig *inventory.ContainerCon
 
 func (engine *Engine) shutdownRoute(route *Route) error {
 
-	log.Infof("Shutting down %s...", route.pathPattern)
+	log.Infof("Shutting down %s...", route.config.Name)
 
 	containerInstance := route.containerInstance
 	route.containerInstance = nil
