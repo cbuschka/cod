@@ -53,7 +53,7 @@ func Run() error {
 
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 
-		log.Info("Got a request...")
+		log.Infof("Got a request to %s...", request.URL.Path)
 
 		err := proxy.ForwardToContainer(writer, request)
 		if err != nil {

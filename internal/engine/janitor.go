@@ -15,10 +15,10 @@ func (janitor *Janitor) Start(engine *Engine) {
 		for {
 			time.Sleep(1 * time.Second)
 
-			instances := engine.getContainerInstances()
-			for _, instance := range instances {
-				if instance.lastHit.Before(time.Now().Add(time.Duration(-10) * time.Second)) {
-					_ = engine.shutdownContainerInstance(instance)
+			routes := engine.getRoutes()
+			for _, route := range routes {
+				if route.containerInstance != nil && route.lastHit.Before(time.Now().Add(time.Duration(-30)*time.Second)) {
+					_ = engine.shutdownRoute(route)
 				}
 			}
 		}

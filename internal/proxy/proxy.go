@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	enginePkg "github.com/cbuschka/cod/internal/engine"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 )
@@ -17,17 +18,20 @@ func NewProxy(engine *enginePkg.Engine) (*Proxy, error) {
 }
 
 func (proxy *Proxy) ForwardToContainer(writer http.ResponseWriter, request *http.Request) error {
-	endpoint, err := proxy.engine.GetOrStartContainer("/")
+	path := request.URL.Path
+	endpoint, err := proxy.engine.GetOrStartContainer(path)
 	if err != nil {
+		log.Errorf("Getting container endpoint for %s failed: %v", path, err)
 		return err
 	}
+
+	url := fmt.Sprintf("%s://%s:%d%s", "http", endpoint.Address, endpoint.Port, request.RequestURI)
+	log.Infof("Redirecting %s to %s:%d...", request.URL.Path, endpoint.Address, endpoint.Port)
 
 	body, err := ioutil.ReadAll(request.Body)
 	if err != nil {
 		return err
 	}
-
-	url := fmt.Sprintf("%s://%s:%d%s", "http", endpoint.Address, endpoint.Port, request.RequestURI)
 
 	downstreamReq, err := http.NewRequest(request.Method, url, bytes.NewReader(body))
 	if err != nil {
@@ -42,6 +46,7 @@ func (proxy *Proxy) ForwardToContainer(writer http.ResponseWriter, request *http
 	httpClient := http.Client{}
 	downstreamResp, err := httpClient.Do(downstreamReq)
 	if err != nil {
+		log.Warnf("Downstream request to %s failed: %v", url, err)
 		http.Error(writer, err.Error(), http.StatusBadGateway)
 		return nil
 	}
@@ -53,6 +58,7 @@ func (proxy *Proxy) ForwardToContainer(writer http.ResponseWriter, request *http
 		}
 	}
 
+	writer.WriteHeader(downstreamResp.StatusCode)
 	downstreamRespBodyBytes, err := ioutil.ReadAll(downstreamResp.Body)
 	if err != nil {
 		return err

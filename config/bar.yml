@@ -1,4 +1,4 @@
 version: "cod:config/v1"
-path: "/**"
+path: "/bar/**"
 image: "nginx:latest"
 port: 80

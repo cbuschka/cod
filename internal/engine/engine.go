@@ -3,13 +3,16 @@ package engine
 import (
 	"context"
 	"fmt"
+	"github.com/cbuschka/go-ant-pattern"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/phayes/freeport"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"os"
@@ -20,7 +23,7 @@ import (
 type Engine struct {
 	sessionId      string
 	containerIdSeq *Counter
-	instances      map[string]*ContainerInstance
+	routes         []*Route
 	configs        map[string]ContainerConfig
 	dockerClient   *client.Client
 	janitor        *Janitor
@@ -36,7 +39,7 @@ func NewEngine() (*Engine, error) {
 	containerIdSeq := NewCounter()
 
 	janitor := &Janitor{}
-	engine := &Engine{instances: map[string]*ContainerInstance{}, configs: map[string]ContainerConfig{}, dockerClient: dockerClient, containerIdSeq: containerIdSeq, sessionId: sessionId, janitor: janitor}
+	engine := &Engine{routes: []*Route{}, configs: map[string]ContainerConfig{}, dockerClient: dockerClient, containerIdSeq: containerIdSeq, sessionId: sessionId, janitor: janitor}
 	janitor.Start(engine)
 
 	return engine, nil
@@ -68,25 +71,43 @@ func (engine *Engine) CleanUp(ctx context.Context) error {
 	return nil
 }
 
+func (engine *Engine) findRoute(path string) (*Route, error) {
+
+	var best *Route = nil
+
+	for _, route := range engine.routes {
+		if route.pathPattern.Matches(path) && (best == nil || best.pathPattern.Specificity() < route.pathPattern.Specificity()) {
+			best = route
+		}
+	}
+
+	if best != nil {
+		return best, nil
+	}
+
+	return nil, fmt.Errorf("route not found")
+}
+
 func (engine *Engine) GetOrStartContainer(path string) (*ContainerEndpoint, error) {
 
-	instance, found := engine.instances[path]
-	if found {
-		instance.lastHit = time.Now()
-		return &instance.endpoint, nil
-	}
-
-	config, found := engine.configs[path]
-	if !found {
-		return nil, fmt.Errorf("not found")
-	}
-
-	containerInstance, err := engine.StartContainer(config)
+	route, err := engine.findRoute(path)
 	if err != nil {
 		return nil, err
 	}
 
-	engine.instances[path] = containerInstance
+	log.Infof("%s matches route pattern %s", path, route.pathPattern.String())
+
+	if route.containerInstance != nil {
+		route.lastHit = time.Now()
+		return &route.containerInstance.endpoint, nil
+	}
+
+	containerInstance, err := engine.StartContainer(route.config)
+	if err != nil {
+		return nil, err
+	}
+
+	route.containerInstance = containerInstance
 
 	return &containerInstance.endpoint, nil
 }
@@ -109,11 +130,17 @@ func (engine *Engine) StartContainer(config ContainerConfig) (*ContainerInstance
 	networkingConfig := network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
 	hostConfig := container.HostConfig{AutoRemove: true}
 	hostConfig.PortBindings = make(nat.PortMap)
-	exposedPort, err := nat.NewPort("tcp", "80")
+	exposedPort, err := nat.NewPort("tcp", fmt.Sprintf("%d", config.ContainerPort))
 	if err != nil {
 		return nil, err
 	}
-	hostConfig.PortBindings[exposedPort] = []nat.PortBinding{{HostPort: "10080", HostIP: "127.0.0.1"}}
+
+	mappedPort, err := freeport.GetFreePort()
+	if err != nil {
+		return nil, err
+	}
+
+	hostConfig.PortBindings[exposedPort] = []nat.PortBinding{{HostPort: fmt.Sprintf("%d/tcp", mappedPort), HostIP: "127.0.0.1"}}
 	labels := make(map[string]string)
 	labels["cod:managed"] = "true"
 	containerConfig := container.Config{
@@ -131,13 +158,13 @@ func (engine *Engine) StartContainer(config ContainerConfig) (*ContainerInstance
 		return nil, err
 	}
 
-	mappedPort, err := engine.getExposedPort(ctx, 80, resp.ID)
+	// mappedPort, err := engine.getExposedPort(ctx, config.ContainerPort, resp.ID)
 	err = waitForAvailableViaHttp("127.0.0.1", mappedPort)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ContainerInstance{id: resp.ID, config: config, endpoint: ContainerEndpoint{Address: "127.0.0.1", Port: mappedPort}, lastHit: time.Now()}, nil
+	return &ContainerInstance{id: resp.ID, endpoint: ContainerEndpoint{Address: "127.0.0.1", Port: mappedPort}}, nil
 }
 
 func (engine *Engine) getExposedPort(ctx context.Context, containerPort int, containerId string) (int, error) {
@@ -160,37 +187,36 @@ func (engine *Engine) getExposedPort(ctx context.Context, containerPort int, con
 	return -1, fmt.Errorf("no binding found")
 }
 
-func (engine *Engine) getContainerInstances() []ContainerInstance {
-	containerInstances := []ContainerInstance{}
-	for _, containerInstance := range engine.instances {
-		containerInstances = append(containerInstances, *containerInstance)
-	}
-
-	return containerInstances
+func (engine *Engine) getRoutes() []*Route {
+	return engine.routes
 }
 
 func (engine *Engine) AddContainerConfig(containerConfig ContainerConfig) error {
-	path := containerConfig.Path
-	_, alreadyExists := engine.configs[path]
-	if alreadyExists {
-		return fmt.Errorf("already exists")
+
+	pathPattern, err := ant_pattern.ParseAntPattern(containerConfig.Path)
+	if err != nil {
+		return err
 	}
 
-	engine.configs[path] = containerConfig
+	route := Route{pathPattern: pathPattern, containerInstance: nil, config: containerConfig, lastHit: time.Now()}
+	engine.routes = append(engine.routes, &route)
 
 	return nil
 }
 
-func (engine *Engine) shutdownContainerInstance(containerInstance ContainerInstance) error {
+func (engine *Engine) shutdownRoute(route *Route) error {
 
-	log.Infof("Shutting down %s...", containerInstance.config.Path)
+	log.Infof("Shutting down %s...", route.pathPattern)
 
-	delete(engine.instances, containerInstance.config.Path)
+	containerInstance := route.containerInstance
+	route.containerInstance = nil
 
-	ctx := context.TODO()
-	err := engine.dockerClient.ContainerKill(ctx, containerInstance.id, "KILL")
-	if err != nil {
-		return err
+	if containerInstance != nil {
+		ctx := context.TODO()
+		err := engine.dockerClient.ContainerKill(ctx, containerInstance.id, "KILL")
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -201,19 +227,18 @@ func waitForAvailableViaHttp(address string, port int) error {
 	for i := 0; i < 10; i++ {
 		url := fmt.Sprintf("%s://%s:%d%s", "http", address, port, "/")
 		httpReq, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return err
-		}
+		if err == nil {
+			httpClient := http.Client{}
+			resp, err := httpClient.Do(httpReq)
+			if err == nil {
+				defer resp.Body.Close()
 
-		httpClient := http.Client{}
-		resp, err := httpClient.Do(httpReq)
-		if err != nil {
-			return nil
-		}
-		defer resp.Body.Close()
+				ioutil.ReadAll(resp.Body)
 
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return nil
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					return nil
+				}
+			}
 		}
 
 		time.Sleep(1 * time.Second)
@@ -222,11 +247,16 @@ func waitForAvailableViaHttp(address string, port int) error {
 	return fmt.Errorf("not available")
 }
 
+type Route struct {
+	pathPattern       *ant_pattern.AntPattern
+	containerInstance *ContainerInstance
+	config            ContainerConfig
+	lastHit           time.Time
+}
+
 type ContainerInstance struct {
 	id       string
-	config   ContainerConfig
 	endpoint ContainerEndpoint
-	lastHit  time.Time
 }
 
 type ContainerEndpoint struct {
