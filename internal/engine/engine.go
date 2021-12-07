@@ -149,7 +149,12 @@ func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*Contai
 	io.Copy(os.Stdout, reader)
 
 	networkingConfig := network.NetworkingConfig{EndpointsConfig: make(map[string]*network.EndpointSettings)}
-	hostConfig := container.HostConfig{AutoRemove: true}
+	hostConfig := container.HostConfig{
+		AutoRemove: true,
+		Resources: container.Resources{
+			CPUShares: 10,
+			Memory:    config.MemoryBytes},
+	}
 	hostConfig.PortBindings = make(nat.PortMap)
 	containerPort, err := nat.NewPort("tcp", fmt.Sprintf("%d", config.ContainerPort))
 	if err != nil {
