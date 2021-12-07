@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"github.com/cbuschka/cod/internal/inventory"
 	"github.com/cbuschka/go-ant-pattern"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -21,7 +22,7 @@ import (
 type Route struct {
 	pathPattern       *ant_pattern.AntPattern
 	containerInstance *ContainerInstance
-	config            ContainerConfig
+	config            *inventory.ContainerConfig
 	lastHit           time.Time
 }
 
@@ -35,18 +36,11 @@ type ContainerEndpoint struct {
 	Port    int
 }
 
-type ContainerConfig struct {
-	Path          string
-	ImageName     string
-	ContainerPort int
-	MaxIdleTime   time.Duration
-}
-
 type Engine struct {
 	sessionId      string
 	containerIdSeq *Counter
 	routes         []*Route
-	configs        map[string]ContainerConfig
+	configs        map[string]inventory.ContainerConfig
 	dockerClient   *client.Client
 	janitor        *Janitor
 }
@@ -61,7 +55,7 @@ func NewEngine() (*Engine, error) {
 	containerIdSeq := NewCounter()
 
 	janitor := &Janitor{}
-	engine := &Engine{routes: []*Route{}, configs: map[string]ContainerConfig{}, dockerClient: dockerClient, containerIdSeq: containerIdSeq, sessionId: sessionId, janitor: janitor}
+	engine := &Engine{routes: []*Route{}, configs: map[string]inventory.ContainerConfig{}, dockerClient: dockerClient, containerIdSeq: containerIdSeq, sessionId: sessionId, janitor: janitor}
 	janitor.Start(engine)
 
 	return engine, nil
@@ -134,11 +128,12 @@ func (engine *Engine) GetOrStartContainer(path string) (*ContainerEndpoint, stri
 	}
 
 	route.containerInstance = containerInstance
+	route.lastHit = time.Now()
 
 	return &containerInstance.endpoint, downstreamPath, nil
 }
 
-func (engine *Engine) StartContainer(config ContainerConfig) (*ContainerInstance, error) {
+func (engine *Engine) StartContainer(config *inventory.ContainerConfig) (*ContainerInstance, error) {
 
 	containerName := fmt.Sprintf("cod_%s_%d", engine.sessionId, engine.containerIdSeq.Next())
 
@@ -169,6 +164,7 @@ func (engine *Engine) StartContainer(config ContainerConfig) (*ContainerInstance
 	hostConfig.PortBindings[exposedPort] = []nat.PortBinding{{HostPort: fmt.Sprintf("%d/tcp", mappedPort), HostIP: "127.0.0.1"}}
 	labels := make(map[string]string)
 	labels["cod:managed"] = "true"
+	labels["cod:configFilename"] = config.Filename
 	containerConfig := container.Config{
 		Tty:    false,
 		Image:  config.ImageName,
@@ -217,7 +213,7 @@ func (engine *Engine) getRoutes() []*Route {
 	return engine.routes
 }
 
-func (engine *Engine) AddContainerConfig(containerConfig ContainerConfig) error {
+func (engine *Engine) AddContainerConfig(containerConfig *inventory.ContainerConfig) error {
 
 	pathPattern, err := ant_pattern.ParseAntPattern(containerConfig.Path)
 	if err != nil {

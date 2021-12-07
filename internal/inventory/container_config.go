@@ -9,11 +9,12 @@ import (
 )
 
 type ContainerConfig struct {
+	Filename      string        `yaml:"-"`
 	Version       string        `yaml:"version"`
 	Path          string        `yaml:"path"`
 	ImageName     string        `yaml:"image"`
 	ContainerPort int           `yaml:"port"`
-	MaxIdleTime   time.Duration `yaml:"maxIdleTime" default:"30s"`
+	MaxIdleTime   time.Duration `yaml:"maxIdleTime"`
 }
 
 func LoadContainerConfig(filename string) (*ContainerConfig, error) {
@@ -29,8 +30,14 @@ func LoadContainerConfig(filename string) (*ContainerConfig, error) {
 		return nil, err
 	}
 
+	containerConfig.Filename = filename
+
 	if "cod:config/v1" != containerConfig.Version {
 		return nil, fmt.Errorf("unsupported version")
+	}
+
+	if containerConfig.MaxIdleTime == 0 {
+		containerConfig.MaxIdleTime = 30 * time.Second
 	}
 
 	return &containerConfig, nil
