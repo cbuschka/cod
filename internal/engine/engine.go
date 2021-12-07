@@ -13,12 +13,34 @@ import (
 	log "github.com/sirupsen/logrus"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"os"
-	"sync/atomic"
 	"time"
 )
+
+type Route struct {
+	pathPattern       *ant_pattern.AntPattern
+	containerInstance *ContainerInstance
+	config            ContainerConfig
+	lastHit           time.Time
+}
+
+type ContainerInstance struct {
+	id       string
+	endpoint ContainerEndpoint
+}
+
+type ContainerEndpoint struct {
+	Address string
+	Port    int
+}
+
+type ContainerConfig struct {
+	Path          string
+	ImageName     string
+	ContainerPort int
+	MaxIdleTime   time.Duration
+}
 
 type Engine struct {
 	sessionId      string
@@ -249,51 +271,4 @@ func waitForAvailableViaHttp(address string, port int) error {
 	}
 
 	return fmt.Errorf("not available")
-}
-
-type Route struct {
-	pathPattern       *ant_pattern.AntPattern
-	containerInstance *ContainerInstance
-	config            ContainerConfig
-	lastHit           time.Time
-}
-
-type ContainerInstance struct {
-	id       string
-	endpoint ContainerEndpoint
-}
-
-type ContainerEndpoint struct {
-	Address string
-	Port    int
-}
-
-type ContainerConfig struct {
-	Path          string
-	ImageName     string
-	ContainerPort int
-	MaxIdleTime   time.Duration
-}
-
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-func randSeq(n int) string {
-	rand.Seed(time.Now().UnixNano())
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
-type Counter struct {
-	curr uint64
-}
-
-func NewCounter() *Counter {
-	return &Counter{0}
-}
-
-func (counter *Counter) Next() uint64 {
-	return atomic.AddUint64(&counter.curr, 1)
 }
